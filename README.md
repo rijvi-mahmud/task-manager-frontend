@@ -178,6 +178,37 @@ column snapshots or hand-patched task lists. Cached data can remain visible with
 refresh error; retry reconciles it. Displayed cards are deduplicated because an
 offset-paginated board may change while more pages are loading.
 
+## Team collaboration and cross-tab updates
+
+Workspaces are shared server resources: members of the same workspace read and
+write the same board. Collaboration currently uses HTTP polling through TanStack
+Query, with a 15-second interval for observed task, statistics, member and workspace
+queries. A successful write revalidates affected queries in the initiating tab;
+other clients discover the committed change on a later fetch.
+
+| Scenario | Current behavior |
+| --- | --- |
+| Another teammate creates/edits/moves a task | An active board picks it up on its next successful refresh |
+| Two tabs show the same workspace | Each tab has its own QueryClient and polls independently |
+| Return to a hidden tab | Stale observed queries refetch on visibility/focus; the session always rechecks |
+| Sign in/out in another tab of the same browser profile | Cookies are shared; the other tab discovers the current identity through `/auth/me` on focus or after a protected-request `401` |
+| Different accounts at the same time | Use separate browser profiles or a normal/private window; ordinary same-profile tabs share the session cookie |
+| Concurrent full task edits | The backend rejects a stale version with `409`; the form offers the latest version |
+| A member loses access | The next protected request is rejected; workspace-list refresh removes unavailable workspaces |
+
+These are near-real-time updates, not an immediate delivery guarantee: request
+latency, failures, hidden tabs, and throttling can delay visible changes. Interval
+polling is not configured to run in hidden tabs. Query cancellation and request
+deduplication apply within each tab; there is no shared cross-tab query cache,
+`BroadcastChannel` synchronization, WebSocket, or SSE stream.
+
+For a manual collaboration check, sign in with two accounts in separate browser
+profiles, add one account to the other's workspace, and edit the same board. Verify
+that the second client sees task/member changes after refresh, stale full edits
+return a conflict, and sign-out is detected when returning to another tab in the
+same profile. Browser-level cross-tab/cookie behavior still needs an actual browser
+check; jsdom unit tests do not establish it.
+
 ## URL filter specification
 
 nuqs uses `nuqs/adapters/tanstack-router`, typed parsers and batched updates.
